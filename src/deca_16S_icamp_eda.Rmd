@@ -1,0 +1,337 @@
+---
+title: "deca_16S_icamp_eda.Rmd"
+author: "Dylan Barth"
+date: "2026-01-20"
+output: html_document
+runtime: html
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(dada2)
+library(phyloseq)
+library(ggh4x)
+library(circlize)
+library(patchwork)
+library(scales)  
+library(shiny)
+library(iCAMP)
+library(rlang)
+library(tufte)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '~/WorkForaging/Academia/Nicole/drhizo/',
+                     fig.width = 15,
+                     fig.height=10,
+                     out.width='100%')
+```
+
+# iCAMP Community Assembly Analysis
+
+"Ecological community assembly is governed by a combination of (i) selection resulting from among-taxa differences in performance; (ii) dispersal resulting from organismal movement; and (iii) ecological drift resulting from stochastic changes in population sizes"
+`r tufte::quote_footer('--- Stegen et al. 2015')`
+
+## Background
+
+In order to better understand the relative strength of these forces among a particular community, Stegen at al developed a framework to quantify community assembly processes along two axes `BMNTI` and `RCBray` that measure specific differences in beta diversity between samples. 
+
+`BMNTI` stands for Beta Mean Nearest Taxon Index, and it quantifies the phylogenetic distance between each species in one community (k) and its closest relative in a second community (m). A low value of `BMNTI` indicates that species in community (k) are more closely related to those in community (m) that would be expected by chance, and thus are dominated by `Homogeneous Selection`. Conversely, a higher value of `BMNTI` indicates that species in community (k) are more phylogenetically distant from those in community (m), and are thus dominated by `Heterogeneous Selection`. 
+
+`RCBray` is a similar metric except that does not take phylogeny into account. An exact species (ASV) from community (k) is either found in similar abundances to community (m) or it isn't. A high value of `RCBray` indicates large differences in community composition, while a low value indicates homogeneity between communities. For that reason, a high value of `RCBray` is indicative of `Dispersal Limitation`, while a low value is indicative of `Homogenizing Dispersal`. 
+
+Due to the fact that `BMNTI` is more precise of a measurement, selection is determined first in the Stegen et al framework, and only if `Selection` is insignificant is a relationship between communities considered for one of the `Dispersal` categories. If a pair of communities does not pass the threshold for either, it is indicative of `Drift`. That's why Stegen et al. is referred to as the 'neutral theory of ecology'. 
+
+The framework we implemented is iCAMP and adds a layer of complexity. The original Stegen et al framework lumped all phylogenetic signals together, but averaging out the signal in this way sacrifices resolution. For instance, comparing two communities, some species may be under `Homogeneous Selection`, while others are under `Heterogeneous Selection`. Averaging the phylogenetic signal might lead one to believe that the communities are at `Drift` with one another, but in truth, they have members that are highly shared, and members that are exclusive. iCAMP solves this problem by introducing phylogenetic 'bins' that the above framework is applied to, which allows us to take a closer look at who is responsible for the trends in the data. 
+
+
+### Import data objects
+
+The main computational workload is documented in `src/run_icamp.R`. Here we import the results of that script along with the phyloseq object containing our main dataset. 
+
+```{r prep-data}
+
+res <- readRDS('data/icamp/16S_icamp_bin.rds')
+ps <- readRDS('data/16Sdada2/phyloseq_dada2.tree.rds')
+meta <- data.frame(sample_data(ps))
+
+phyla_pal <- colorRampPalette(c("#8A59EA","#DC59EA","#F05BB1",
+                                      "#E45779","#E46957","#CC513C",
+                                      "#F3B166","#D9F366","#A2F366",
+                                      "#54DFC8","#43B26A","#439AB2",
+                                      "#5971EA"))
+
+```
+
+
+### Global Patterns
+
+We begin by taking a look at the global patterns from the analysis. For each pair of `samples` and each `phylogenetic bin` and each of the `processes` (HeS, Hos, HoD, DL, D), a proportional `effect` was calculated. The combinatorial nature of this analysis leaves us with a high dimensional dataset to probe. 
+
+Here we group `samples` at the `Shrub` level, averaging out all of their individual effects. We then average across all `phylogenetic bins` to produce an average proportional `effect` for each `process`. 
+
+```{r global-proc, fig.width = 12, fig.height=10, out.width='100%'}
+global_proc <- res$CbMPDiCBraya %>% 
+  pivot_longer(cols = c(Heterogeneous.Selection, Homogeneous.Selection, 
+                        Dispersal.Limitation, Homogenizing.Dispersal, 
+                        Drift.and.Others),
+               names_to = "Process",
+               values_to = "Relative_Importance") %>% 
+  rename('SampleID'='sample1') %>%
+  left_join(., meta, by="SampleID") %>% 
+  group_by(Shrub, Process) %>% 
+  summarize(Relative_Importance=mean(Relative_Importance)) 
+
+ggplot(global_proc) +
+  geom_bar(mapping=aes(x=Shrub, y=Relative_Importance, fill=Process), stat='identity')+
+  scale_y_continuous(expand=c(0,0))+
+  scale_fill_manual(values = c("#B35C1E","#178764","#5C1EB3","#A61EB3","#93AD1F"))+
+  theme_bw()+
+  ggtitle("Global Patterns of Community Assembly")
+
+```
+
+### The `BMNTI-RCbray` axes
+
+
+Zooming in further, we can take a look at the individual sample pairs that make up these patterns. Here we gather the estimated `BMNTI` and `RCbray` values for every `sample pair` and `bin`. Many low abundance taxa have high significance, so we weight the axes by each bin's relative abundance. We then average the resulting proportional effects across phylogenetic bins and choose the `process` with the highest value. The resulting graph illustrates the relative effects of `Selection` and `Dispersion` and identifies which ecological assembly process dominates the sample-pairs. 
+
+
+```{r global-axes-samplewise, fig.width = 12, fig.height=10, out.width='100%'}
+weights <- res$detail$bin.weight
+sig_bnti <- res$detail$SigbMPDi
+sig_rc <- res$detail$SigBCa
+
+tmp <- res$CbMPDiCBraya %>% 
+  pivot_longer(cols = c(Heterogeneous.Selection, Homogeneous.Selection, 
+                        Dispersal.Limitation, Homogenizing.Dispersal, 
+                        Drift.and.Others),
+               names_to = "Process",
+               values_to = "Relative_Importance") %>% 
+  group_by(sample1, sample2) %>% 
+  slice_max(order_by = Relative_Importance, n = 1) 
+
+
+#calculate abundance-weighted metrics across phylo bins
+wBNTI <- rowSums(sig_bnti[, -c(1,2)] * weights[, -c(1,2)], na.rm = TRUE)
+wRC <- rowSums(sig_rc[, -c(1,2)] * weights[, -c(1,2)], na.rm = TRUE)
+plot_df <- data.frame(sample1=sig_bnti$name1, sample2=sig_bnti$name2,BNTI = wBNTI,RC = wRC) %>% 
+  left_join(., tmp, by=c('sample1','sample2'))
+ggplot(plot_df)+
+  geom_point(mapping=aes(x=BNTI, y=RC, color=Process), alpha=0.8)+
+  theme_bw()+
+  scale_x_continuous(limits = c(-1,1))+
+  scale_y_continuous(limits = c(-1,1))+
+  geom_vline(xintercept = 0)+
+  geom_hline(yintercept = 0)+
+  scale_color_manual(values = c("#B35C1E","#178764","#5C1EB3"))+
+  xlab('wBNTI')+
+  ylab('wRC')+
+  ggtitle("Process Dominance (All Sample Comparisons)")
+
+```
+
+
+Because we are averaging across phylogenetic `bins`, most sample-pairs are dominated by drift even though they may have individual phylogenetic clades that are under selection or dispersal. Coloring the graph by a different metric reveals the underlying pattern. Here we set thresholds for significance for both `BMNTI` and `RCbray` stats at the `sample-pair-bin` level. These abundance-unweighted indices are meant to scale between -1 and 1, so a threshold of 0.95 is chosen in each case. Graphing the number of significant bins shows a correlation with the overall sample-pair weighted metrics on each axis. 
+
+```{r global-axes-samplewise-nproc, fig.width = 12, fig.height=10, out.width='100%'}
+
+bmthresh <- 0.95
+rcthresh <- 0.95
+
+wBMNT <- sig_bnti[, -c(1,2)] * weights[, -c(1,2)]
+wRC <- sig_rc[, -c(1,2)] * weights[, -c(1,2)]
+
+
+bnti <- sig_bnti %>% 
+  pivot_longer(!c(name1, name2), names_to = 'bin', values_to = 'CbMPDi') %>% 
+  mutate(bin=sub('CbMPDi.','',bin))
+rc <- sig_rc  %>% 
+  pivot_longer(!c(name1, name2), names_to = 'bin', values_to = 'Cbraya') %>% 
+  mutate(bin=sub('Cbraya.','',bin))
+
+gbdat <- left_join(bnti, rc, by=c('name1','name2','bin')) %>% 
+  filter(CbMPDi< -bmthresh) %>% 
+  group_by(name1, name2) %>% 
+  summarize(n_sig_bnti = n())
+
+grdat <- left_join(bnti, rc, by=c('name1','name2','bin')) %>% 
+  filter(Cbraya > rcthresh) %>% 
+  group_by(name1, name2) %>% 
+  summarize(n_sig_rc = n())
+
+n_bin_sig <- left_join(gbdat, grdat, by=c('name1','name2')) %>% 
+  rename('sample1'='name1','sample2'='name2')
+
+plot_df <- left_join(plot_df, n_bin_sig, by=c('sample1','sample2'))
+ggplot(plot_df)+
+  geom_point(mapping=aes(x=BNTI, y=RC, color=n_sig_bnti), alpha=0.8)+
+  theme_bw()+
+  scale_x_continuous(limits = c(-1,1))+
+  scale_y_continuous(limits = c(-1,1))+
+  geom_vline(xintercept = 0)+
+  geom_hline(yintercept = 0)+
+  scale_color_gradientn(
+    colors = c("black", "yellow", "darkorange"),
+    values = rescale(c(0, 13, 15)),
+    limits = c(0, 15) 
+  ) +
+  xlab('wBNTI')+
+  ylab('wRC')+
+  ggtitle("Process Dominance (All Sample Comparisons)")
+
+
+
+ggplot(plot_df)+
+  geom_point(mapping=aes(x=BNTI, y=RC, color=n_sig_rc), alpha=0.8)+
+  theme_bw()+
+  scale_x_continuous(limits = c(-1,1))+
+  scale_y_continuous(limits = c(-1,1))+
+  geom_vline(xintercept = 0)+
+  geom_hline(yintercept = 0)+
+  scale_color_gradientn(
+    colors = c("black", "yellow", "darkorange"),
+    values = rescale(c(0, 25, 40)),
+    limits = c(0, 40) 
+  ) +
+  xlab('wBNTI')+
+  ylab('wRC')+
+  ggtitle("Process Dominance (All Sample Comparisons)")
+
+```
+
+
+### Taxonomic Analysis
+
+The richness of this data allows us to probe deeply into which particular taxa drive certain patterns in the data. In this example, we compare `Mariola` with `Interspace` samples and identify `phylogenetic bins` that have significant process effects. We will keep the same axis we have been working with, but we will take away the abundance weighting to visualize the udnerlying iCAMP statistical framework. 
+
+```{r mariola-v-interspace-phyla, fig.width = 12, fig.height=10, out.width='100%'}
+
+asv_to_bin <- res$detail$taxabin$sp.bin %>% rownames_to_column("ASV")
+tax <- data.frame(tax_table(ps) )%>% rownames_to_column("ASV")
+phylo_bin <- left_join(asv_to_bin, tax, by="ASV")  %>% 
+  rename('bin'='bin.id.new') %>% mutate(bin=paste0('bin',bin)) %>% 
+  group_by(bin) %>% 
+  summarize(Phylum=paste(unique(Phylum), sep = '/', collapse = '/')) #collapse Phyla
+
+phy_bnti <- sig_bnti %>% 
+  pivot_longer(!c(name1, name2), names_to = 'bin', values_to = 'CbMPDi') %>% 
+  mutate(bin=sub('CbMPDi.','',bin))
+phy_rc <- sig_rc  %>% 
+  pivot_longer(!c(name1, name2), names_to = 'bin', values_to = 'Cbraya') %>% 
+  mutate(bin=sub('Cbraya.','',bin))
+
+#filter to bins with >0.005 rel abundance
+ps_tmp <- transform_sample_counts(ps, function(x) {x / sum(x)})
+ps_tmp <- tax_glom(ps_tmp, taxrank = 'Phylum')
+ps_tmp <- filter_taxa(ps_tmp, function(x) mean(x) > 0.005, TRUE)
+
+tweights <- weights %>% 
+  left_join(., meta %>% select(samp1=SampleID, Shrub.S1=Shrub), by='samp1') %>% 
+  left_join(., meta %>% select(samp2=SampleID, Shrub.S2=Shrub), by='samp2') 
+w1 <- tweights %>% filter(Shrub.S1=="Mariola",Shrub.S2=="Interspace")
+w2 <- tweights %>% filter(Shrub.S2=="Mariola",Shrub.S1=="Interspace")
+tweights <- rbind(w1, w2) %>% 
+  pivot_longer(!c(samp1, samp2, Shrub.S1, Shrub.S2), names_to = 'bin', values_to = 'rel_abundance') %>% 
+  group_by(Shrub.S1,Shrub.S2, bin) %>% 
+  summarize(rel_abundance=mean(rel_abundance))
+pnames <- tweights %>% filter(rel_abundance>0.005) %>% pull(bin)
+
+
+#final graph joins
+gdat <- left_join(phy_bnti, phy_rc, by=c('name1','name2','bin'))
+gdat <- left_join(gdat, phylo_bin, by='bin')
+tdat <- gdat %>% 
+       left_join(., meta %>% select(name1=SampleID, Shrub.S1=Shrub), by='name1') %>% 
+       left_join(., meta %>% select(name2=SampleID, Shrub.S2=Shrub), by='name2') 
+t1 <- tdat %>% filter(Shrub.S1=="Mariola",Shrub.S2=="Interspace")
+t2 <- tdat %>% filter(Shrub.S2=="Mariola",Shrub.S1=="Interspace")
+tdat <- rbind(t1, t2) %>% 
+  group_by(Shrub.S1,Shrub.S2, bin, Phylum) %>% 
+  summarize(CbMPDi=mean(CbMPDi),Cbraya=mean(Cbraya)) %>% 
+  filter(bin %in% pnames ) %>% 
+  mutate(Phylum = case_when( str_count(Phylum, "/") >= 3 ~ "Mixed_Phyla", .default = Phylum )) #group 
+
+ggplot(tdat)+
+  geom_point(mapping=aes(x=CbMPDi, y=Cbraya, color=Phylum), size=3, alpha=0.8)+
+  theme_bw()+
+  scale_color_manual(values=sample(phyla_pal(length(unique(tdat$Phylum)))))+
+  ggtitle("Phylum-level Community Assembly (Mariola vs Interspace)")
+
+```
+
+### Indicator and Ubiquitous species
+
+The x axis denotes the strength and direction of selection between these two sample populations. Highly negative values correspond to `Homogeneous Selection` meaning the communities are selecting for very similar species, while highly positive values correspond to `Heterogeneous Selection` meaning the communities are selecting for distinct species. 
+
+The y axis denotes the strength and direction of dispersal between the populations. Highly negative values correspond to `Homogeneous Dispersal` meaning the communities share many exact ASV copies, while highle positive values correspond to `Dispersal Limitation` meaning the communities share fewer exact ASVs than expected. It is important to remember to consider selection first, and only if it is not significant to assign that community to either dispersal metrics.
+
+Therefore, we can identify ASVs that are common among these communities and also ASVs that distinguish them. To illustrate this, we plot the relative abundance of ASVs under `Heterogeneous Selection` and `Homogeneous Selection` in each community. 
+
+```{r indicator-ubiq, fig.width = 12, fig.height=10, out.width='100%'}
+indicators <- tdat %>% arrange(-CbMPDi) %>% head(n=5) %>% pull(bin)
+ubiq <- tdat %>% arrange(CbMPDi) %>% head(n=5) %>% pull(bin)
+asvs <- asv_to_bin %>% 
+  mutate(bin=paste0('bin',bin.id.new)) %>% 
+  filter(bin %in% indicators | bin %in% ubiq) %>% 
+  pull(ASV)
+phylo_bin <- left_join(phylo_bin, asv_to_bin %>% select(ASV,bin=bin.id.new) %>% mutate(bin=paste0('bin',bin)), by='bin')
+
+#get rel abundances
+mrel_abund <- ps %>% 
+  prune_taxa(asvs, .) %>% 
+  subset_samples(grepl("Mariola|Interspace",Shrub) ) %>% 
+  transform_sample_counts(., function(x) x / sum(x)) %>% 
+  otu_table() %>% 
+  as.data.frame() %>% 
+  rownames_to_column("SampleID") %>% 
+  pivot_longer(!c(SampleID),names_to = 'ASV', values_to = 'rel_abundance') %>% 
+  left_join(., meta, by='SampleID') %>% 
+  left_join(., phylo_bin, by="ASV")
+
+gdat <- mrel_abund %>% group_by(SampleID, Shrub, bin, Phylum) %>% 
+  summarize(rel_abundance=sum(rel_abundance)) %>% 
+  mutate(Phylum = case_when( str_count(Phylum, "/") >= 3 ~ "Mixed_Phyla", .default = Phylum ),
+         Selection=case_when(bin %in% indicators~"Heterogeneous Selection",
+                             bin %in% ubiq~"Homogeneous Selection"),
+         bin.phylo = paste0(bin,'__',Phylum))  %>% 
+  arrange(Selection) 
+
+g1 <- ggplot(gdat %>% filter(Selection=="Heterogeneous Selection"))+
+  geom_boxplot(mapping=aes(x=rel_abundance, y=Shrub , fill=Shrub), outliers = F)+
+  geom_jitter(mapping=aes(x=rel_abundance, y=Shrub ), width=0, height = 0.15)+
+  theme_bw()+
+  theme(axis.text.y = element_blank())+
+  facet_grid(Selection~bin.phylo, scales='free', space='free_y', labeller = label_wrap_gen(width = 20))+
+  xlab("Relative  Abundance")+
+  ylab("Shrub") +
+  ggtitle("Strong Selection Relative Abundances")
+
+g2 <- ggplot(gdat %>% filter(Selection!="Heterogeneous Selection"))+
+  geom_boxplot(mapping=aes(x=rel_abundance, y=Shrub , fill=Shrub), outliers = F)+
+  geom_jitter(mapping=aes(x=rel_abundance, y=Shrub ), width=0, height = 0.15)+
+  theme_bw()+
+  theme(axis.text.y = element_blank())+
+  facet_grid(Selection~bin.phylo, scales='free', space='free_y', labeller = label_wrap_gen(width = 20))+
+  xlab("Relative  Abundance")+
+  ylab("Shrub")
+
+
+g1 / g2
+
+
+```
+
+
+### Phylogenetic Selection Signal
+
+We can also plot the `BMNTI` values on a tree
+
+```{r phylogenetic-signal, fig.width = 12, fig.height=10, out.width='100%'}
+tree <- phy_tree(ps)
+tax <- tax_table(ps) %>% 
+  as.data.frame() %>% 
+  tibble::rownames_to_column("label")
+gdat <- left_join(as_tibble(tree), tax, by = "label")
+
+
+```
+

@@ -1,0 +1,138 @@
+---
+title: "deca_16Sordination"
+author: "Dylan Barth"
+date: "2025-12-22"
+output: 
+  html_document:
+    theme: flatly
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+#import libraries and set wd
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(shiny)
+library(phyloseq)
+library(vegan)
+knitr::opts_knit$set(root.dir = '~/WorkForaging/Academia/Nicole/drhizo/')
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import data
+
+As always, we begin by importing the data and preprocessing it for our main algorithm. For NMDS, we can use an n x p (samples x species/asv) matrix derived from the otu table. 
+
+```{r import}
+ps <- readRDS('data/16Sdada2/phyloseq_dada2.rds')
+mat <- data.frame(otu_table(ps))
+dim(mat) #ensure samples x species, should have many more species
+meta <- data.frame(sample_data(ps)) %>% rename(Sample=SampleID)
+```
+
+## Generate Distance Matrix
+
+NMDS (Non-metric MultiDimensional Scaling) is a dimension reduction technique that works well for ordinal data, due to the fact that this method does not assume that the data are embedded in euclidean space like, say, PCA does. It does, however, require calculating the distance matrix which is an n x n matrix, so it can easily fit in memory. There is a more automated way to do this, with `metaMDS()`, but we will make use of the distance matrix in subsequent analyses. We normalize the data using the hellinger transformation, which transforms the data to account for library size and relative composition. Unfortunately there isn't an elegant way to optimize this code. 
+
+
+```{r distance-bray}
+X <- vegdist(mat, method='bray')
+saveRDS(X, 'data/16Svegan/bray.dist.rds')
+
+```
+
+## Calculate NMDS
+
+From this distance matrix, we can calculate the NMDS coordinates of each sample using the `metaMDS()` function. We choose to reduce the data into `k=3` dimensions and return not only NMDS coordinates for samples, but also species using the `wascores = T` argument. The arguments `try` and `trymax` limit the minimum and maximum numbers of random starts in search of stable solutions, each random seed requires its own calculation, the number of which that are allowed to concurrently run is controlled by the argument `parallel`. The argument `maxit` controls the maximum number of gradient descent steps allowed in each random seed. 
+
+
+```{r run-nmds}
+out <- metaMDS(X,
+               k=3,
+               wascores = T,
+               weakties=T,
+               try=50,
+               trymax=70,
+               parallel=8,
+               maxit=50)
+saveRDS(out, 'data/16Svegan/deca_nmds.rds')
+
+str(out)
+
+```
+
+## Check NMDS fit
+
+Here we ensure that the solution we found is relatively well suited to the dataset. We do this by checking the stress (for NMDS, <0.1 is desirable, >0.2 is unreliable), goodness of fit, and by plotting the observed distance in the distance matrix against the euclidean distance in NMDS space. We expect the correlation to be positive, but not necessarily linear.
+
+```{r goodness-of-fit}
+print(paste0("Stress of NMDS model: ", out$stress))
+
+gdat <- data.frame(out$points)
+gdat$goodness <- goodness(out)
+gdat$Sample <- rownames(gdat)
+gdat <- left_join(gdat, meta, by='Sample')
+ggplot(gdat)+
+  geom_jitter(aes(x=Shrub, y=goodness, color=Shrub), height = 0, width=0.25)+
+  theme_bw()+
+  guides(color='none')+
+  xlab("Shrub")+
+  ylab("Goodness of Fit")
+
+
+stressplot(out)
+
+```
+
+## Generate ordination plots
+
+For now, we only graph in two dimensions. In a later example, we will include an interactive shiny element that allows the user to control the variable mapped to color in 3D. 
+
+
+```{r graph-nmds-shiny}
+axis_choices <- c('MDS1','MDS2','MDS3')
+var_choices <- c('Site','Shrub','none')
+
+sidebarLayout(
+  sidebarPanel(
+    selectInput("x_axis", "X axis", choices = axis_choices, selected = axis_choices[1]),
+    selectInput("y_axis", "Y axis", choices = axis_choices, selected = axis_choices[min(2, length(axis_choices))]),
+    hr(),
+    selectInput("col_var", "Color by", choices = var_choices, selected = "none"),
+    selectInput("shape_var", "Shape by", choices = var_choices, selected = "none")
+),
+mainPanel(
+  plotOutput("mds_plot", height = 550)
+  )
+)
+
+shinyServer(function(input, output, session) { 
+  
+  
+  output$mds_plot <- renderPlot({
+    df <- gdat
+    xvar <- input$x_axis
+    yvar <- input$y_axis
+    cvar <- input$col_var
+    svar <- input$shape_var
+    
+    show_legend <- (cvar != "none") || (svar != "none")
+    
+    p <- ggplot(df, aes(x = .data[[xvar]], y = .data[[yvar]])) + #add base plot
+    geom_point(size = 2.5, alpha = 0.9) +
+    labs(x = xvar, y = yvar)
+    
+    if (cvar != "none") {
+      p <- p + aes(color = .data[[cvar]])
+    }
+    if (svar != "none") {
+      p <- p + aes(shape = .data[[svar]])
+    }
+    
+    p + theme_minimal(base_size = 13) +
+    theme(legend.position = if (show_legend) "right" else "none")
+    
+    p
+  })
+})
+```
