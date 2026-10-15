@@ -8,12 +8,12 @@ The repo is split into two main components -- `Data Processing` and `Data Analys
 ```mermaid
 graph TB;
     A[Raw Sequences: \nFASTQ] --> B[dada2: \nDenoising, ASV calling, \nFilter samples, reads & taxa];
-    B --> C[dada2 (SILVA & UNITE): \nAssign Taxa];
-    C --> D[qiime (SEPP): \nPhylogenetic Placement];
+    B --> C[dada2 \(SILVA & UNITE\): \nAssign Taxa];
+    C --> D[qiime \(SEPP\): \nPhylogenetic Placement];
     D --> H[ape: \nPCoA];
     D --> G[indicspecies: \nIndicator Species Analysis];
     D --> D[vegan: \nAlpha diversity];
-    D --> E[mecocomp (+SpiecEasi): \nBeta diversity];
+    D --> E[mecocomp \(+SpiecEasi\): \nBeta diversity];
     E --> F[iCAMP: \nCommunity Assembly];
     D --> I[faprotax & funguild : \nPathway Analysis];
 ```
