@@ -12,7 +12,7 @@ graph TB;
     C --> D[qiime SEPP: \nPhylogenetic Placement];
     D --> H[ape: \nPCoA];
     D --> G[indicspecies: \nIndicator Species Analysis];
-    D --> D[vegan: \nAlpha diversity];
+    D --> J[vegan: \nAlpha diversity];
     D --> E[mecocomp +SpiecEasi: \nBeta diversity];
     E --> F[iCAMP: \nCommunity Assembly];
     D --> I[faprotax & funguild : \nPathway Analysis];
@@ -23,7 +23,7 @@ graph TB;
 ```mermaid
 graph TB;
     A[Phyloseq:\nASV table, Taxonomy, \nFunctional annotation, \nPhylo tree] --> B[`drhizo_16S_icamp_eda_shiny.Rmd`: \niCAMP Interactive Analysis];
-    A --> C[`final_report_figs.R`  \nGenerate reports for: \nSample Distribution \nTaxonomic Abundance \nFunctional Annotation \nPCoA & Beta Div \nIndicator Species Analysis];
+    A --> C[`final_report_figs.R`  \nGenerate: \nSample Distribution \nTaxonomic Abundance \nFunctional Annotation \nPCoA & Beta Div \nIndicator Species Analysis];
     A --> D['vegan_diversity.R' : \nAlpha Diversity Panel];
 ```
 
