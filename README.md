@@ -6,7 +6,7 @@ This repo contains several analyses completed for the Pietrasiask Lab pertaining
 
 The repo is split into two main components -- `Data Processing` and `Data Analysis`. Whereas Data Processing comprises the transformation from raw reads into abundances, taxonomy assignment, and phylogenetic placement, Data Analysis comprises all the downstream analyses of these data products. 
 
-## Data Processing Pipeline
+## Pipeline Overview
 ```mermaid
 ---
 config:
