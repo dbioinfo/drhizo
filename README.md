@@ -10,7 +10,7 @@ graph TB;
     A[Raw Sequences: \nFASTQ] --> B[dada2: \nDenoising, ASV calling, \nFilter samples, reads & taxa];
     B --> C[dada2 SILVA & UNITE: \nAssign Taxa];
     C --> K[qiime SEPP: \nPhylogenetic Placement];
-    K --> D(Complete Phyloseq Object);
+    K --> D((Complete Phyloseq Object));
     D --> H[ape: \nPCoA];
     D --> G[indicspecies: \nIndicator Species Analysis];
     D --> J[vegan: \nAlpha diversity];
