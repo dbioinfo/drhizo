@@ -1,3 +1,5 @@
+
+
 # Desert Rhizosphere Microbiome
 
 This repo contains several analyses completed for the Pietrasiask Lab pertaining to the rhizosphere microbiome of several shrub species in the mojave desert.
@@ -6,6 +8,10 @@ The repo is split into two main components -- `Data Processing` and `Data Analys
 
 ## Data Processing Pipeline
 ```mermaid
+---
+config:
+  theme: 'dark-neo'
+---
 graph TB;
 subgraph Z[Data Processing];
     direction LR;
@@ -24,13 +30,6 @@ subgraph Y[Data Analysis];
 end;
 ```
 
-## Data Analysis Pipeline
-```mermaid
-graph TB;
-    A((Phyloseq Object)) --> B[`drhizo_16S_icamp_eda_shiny.Rmd`: \niCAMP Interactive Analysis];
-    A --> C[`final_report_figs.R`  \nGenerate: \nSample Distribution \nTaxonomic Abundance \nFunctional Annotation \nPCoA & Beta Div \nIndicator Species Analysis];
-    A --> D['vegan_diversity.R' : \nAlpha Diversity Panel];
-```
 
 ## Misc Scripts
 
