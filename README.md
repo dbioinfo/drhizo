@@ -22,7 +22,7 @@ graph TB;
 ## Data Analysis Pipeline
 ```mermaid
 graph TB;
-    A[Phyloseq:\nASV table, Taxonomy, \nFunctional annotation, \nPhylo tree] --> B[`drhizo_16S_icamp_eda_shiny.Rmd`: \niCAMP Interactive Analysis];
+    A((Phyloseq Object)) --> B[`drhizo_16S_icamp_eda_shiny.Rmd`: \niCAMP Interactive Analysis];
     A --> C[`final_report_figs.R`  \nGenerate: \nSample Distribution \nTaxonomic Abundance \nFunctional Annotation \nPCoA & Beta Div \nIndicator Species Analysis];
     A --> D['vegan_diversity.R' : \nAlpha Diversity Panel];
 ```
