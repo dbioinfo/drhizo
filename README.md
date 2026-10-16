@@ -31,6 +31,7 @@ subgraph Y[Data Analysis];
     E --> L;
     F --> L;
     I --> L;
+    H --> L;
     F --> N[`drhizo_16S_icamp_eda_shiny.Rmd`: \niCAMP Interactive Analysis];
     L --> M((final_report.pdf));
 end;
