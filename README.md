@@ -14,8 +14,7 @@ config:
 ---
 graph TB;
 subgraph Z[Data Processing];
-    direction LR;
-    A[Raw Sequences: \nFASTQ] --> B[dada2: \nDenoising, ASV calling, \nFilter samples, reads & taxa];
+    A((Raw Sequence Reads)) --> B[dada2: \nDenoising, ASV calling, \nFilter samples, reads & taxa];
     B --> C[dada2 SILVA & UNITE: \nAssign Taxa];
     C --> K[qiime SEPP: \nPhylogenetic Placement];
     K --> D((Complete Phyloseq Object));
@@ -25,8 +24,15 @@ subgraph Y[Data Analysis];
     D --> G[indicspecies: \nIndicator Species Analysis];
     D --> J[vegan: \nAlpha diversity];
     D --> E[mecocomp +SpiecEasi: \nBeta diversity];
-    E --> F[iCAMP: \nCommunity Assembly];
+    E --> F[iCAMP: \nCommunity Assembly];  
     D --> I[faprotax & funguild : \nPathway Analysis];
+    G --> L[final_report_figs.R]; 
+    J --> L;
+    E --> L;
+    F --> L;
+    I --> L;
+    F --> N[`drhizo_16S_icamp_eda_shiny.Rmd`: \niCAMP Interactive Analysis];
+    L --> M((final_report.pdf));
 end;
 ```
 
