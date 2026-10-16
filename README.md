@@ -10,7 +10,7 @@ The repo is split into two main components -- `Data Processing` and `Data Analys
 ```mermaid
 ---
 config:
-  theme: 'dark-neo'
+  theme: 'neo-dark'
 ---
 graph TB;
 subgraph Z[Data Processing];
